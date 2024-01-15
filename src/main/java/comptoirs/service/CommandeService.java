@@ -105,9 +105,33 @@ public class CommandeService {
      *                                                         pas positive
      */
     @Transactional
-    public Ligne ajouterLigne(int commandeNum, int produitRef, @Positive int quantite) {
-        // TODO : implémenter cette méthode
-        throw new UnsupportedOperationException("Pas encore implémenté");
+    public Ligne ajouterLigne(Integer commandeNum, Integer produitRef, @Positive int quantite) {
+        // On vérifie que le produit existe
+        var produit = produitDao.findById(produitRef).orElseThrow();
+        // On  vérifie que le produit n'est pas marqué indisponible
+        if (produit.isIndisponible()) {
+            throw new IllegalStateException("Produit indisponible");
+        }
+        // On vérifie qu'il y a assez de stock
+        if (produit.getUnitesEnStock() < quantite) {
+            throw new IllegalStateException("Pas assez de stock");
+        }
+        // On vérifie que la commande existe
+        var commande = commandeDao.findById(commandeNum).orElseThrow();
+        // On vérifie que la commande n'est pas déjà envoyée
+        if (commande.getEnvoyeele() != null) {
+            throw new IllegalStateException("Commande déjà envoyée");
+        }
+        
+        // On crée une ligne de commande pour cette commande
+        var nouvelleLigne = new Ligne(commande, produit, quantite);
+        // On enregistre la ligne de commande (génère la clé)
+        ligneDao.save(nouvelleLigne);
+        // On incrémente la quantité commandée
+        produit.setUnitesCommandees(produit.getUnitesCommandees() + quantite);
+        // Inutile de sauvegarder le produit, les entités modifiées par une transaction
+        // sont automatiquement sauvegardées à la fin de la transaction
+        return nouvelleLigne;
     }
 
     /**
@@ -129,8 +153,17 @@ public class CommandeService {
      * @throws IllegalStateException            si la commande a déjà été envoyée
      */
     @Transactional
-    public Commande enregistreExpedition(int commandeNum) {
-        // TODO : implémenter cette méthode
-        throw new UnsupportedOperationException("Pas encore implémenté");
+    public Commande enregistreExpedition(Integer commandeNum) {
+        var commande = commandeDao.findById(commandeNum).orElseThrow();
+        if (commande.getEnvoyeele() != null) {
+            throw new IllegalStateException("Commande déjà expédiée");
+        }
+        commande.setEnvoyeele(LocalDate.now());
+        commande.getLignes().forEach(ligne -> {
+            var produit = ligne.getProduit();
+            produit.setUnitesEnStock(produit.getUnitesEnStock() - ligne.getQuantite());
+            produit.setUnitesCommandees(produit.getUnitesCommandees() - ligne.getQuantite());
+        });
+        return commande;
     }
 }
